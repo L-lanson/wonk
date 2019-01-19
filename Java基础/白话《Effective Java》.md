@@ -1,7 +1,7 @@
 + [一、引言](#chapter1)
 + [二、创建和销毁对象](#chapter2)
    - [考虑用静态工厂方法代替构造器](#rule1)
-   - [遇到多个构造器参数时要考虑用构建器]()
+   - [遇到多个构造器参数时要考虑用构建器（Builder）](#rule2)
    - [用私有构造器或枚举类型强化Singleton属性]()
    - [通过私有构造器强化不可实例化的能力]()
    - [避免创建不必要的对象]()
@@ -121,3 +121,115 @@ Map<String, Person> persons = new HashMap<>();
 
 2. 静态工厂方法与其他静态方法实际上没有任何区别
 >除非有很好的文档说明或者名字一目了然（如：newInstance、createXxx），否则我们都不知道这是个静态工厂方法。
+
+
+### 第2条： 遇到多个构造器参数时考虑使用构建器（Builder）
+当构造对象时有多个可选参数，构造器和和静态工厂方法都有很大的局限。要么考虑每种情形，根据情形提供不同的方法，这样做始终赶不上变化，灵活度不够。要么在方法声明时提供所有参数，让调用者自由选择，但这样做会产生大量冗余参数。   
+举个栗子：   
+汉堡包（Hamburger）由很多原料组成，加鸡肉（Chicken）可以做出鸡肉汉堡，加牛肉（Beef）可以做出牛肉汉堡，两样都加可以做出鸡肉+牛肉汉堡。以下提供三种方式实现这个汉堡。
+
+1. 重叠构造器模式
+>这种方式加入了很多冗余参数，不仅造成阅读困难，还有可能因为调用者传错参数而造成项目出错
+
+```Java
+//层叠构造器的方式
+//有很多冗余参数，而且代码量大
+public class Hamburger{
+  private Chicken chicken;
+  private Beef beef;
+
+  public Hamburger(Chicken chicken){
+    this(chicken, null);
+  }
+
+  public Hamburger(Beef beef){
+    this(null, beef);
+  }
+
+  public Hamburger(Chicken chicken, Beef beef){
+    this.chicken = chicken;
+    this.beef = beef;
+  }
+}
+
+//鸡肉汉堡
+Hamburger chickenHamburger = new Hamburger(chicken);
+//鸡肉+牛肉汉堡
+Hamburger chickenBeefHamburger = new Hamburger(chicken, beef);
+```
+
+2. JavaBeans模式
+>对象创建与设值分开，容易造成对象状态不一致，因为对象在设值的时候有可能被其他对象修改   
+JavaBeans模式阻止了把类做成不可变的状态，天生不是线程安全的，因为它提供了setter方法供外界修改其状态
+
+```Java
+public class Hamburger{
+  private Chicken chicken;
+  private Beef beef;
+
+  public Hamburger(){}
+
+  public void setChicken(Chicken chicken){
+    this.chicken = Chicken;
+  }
+
+  public void setBeef(Beef beef){
+    this.beef = beef;
+  }
+}
+
+//鸡肉+牛肉汉堡
+Hamburger hamburger = new Hamburger()
+hamburger.setChicken(chicken);
+hamburger.setBeef(beef);
+```
+
+3. 构建器（Builder）模式
+>相比JavaBeans模式，Builder模式可以在在构造出对象之前设置属性，因此它可以保证对象状态的一致性   
+相比重叠构造器模式，Builder模式可以有多个可变参数，调用者可以根据需要自由选择，不会产生参数冗余   
+但是Builder模式也有缺点，它多创建了Builder对象，性能会稍微有点降低。另外它的写法也比较冗长，因此多个参数（4个以上）时才适合使用   
+要使用Builder模式，最好一开始就使用，而不是等参数增多时才改成Builder模式，因为这种修改可能会造成调用者的旧API出现问题
+
+```Java
+//构建器接口
+public interface Builder<T>{
+  public T build();
+}
+
+//汉堡包类
+public class Hamburger{
+  private Chicken chicken;
+  private Beef beef;
+
+  private Hamburger(Builder<? extends Hamburger> builder){
+    this.chicken = builder.chicken;
+    this.beef = builder.beef;
+  }
+
+  //内部静态类作为构建器
+  public static Builder implements Builder<Hamburger>{
+    private Chicken chicken;
+    private Beef beef;
+
+    public Builder chicken(Chicken chicken){
+      this.chicken = chicken;
+      return this;
+    }
+
+    public Builder beef(Beef beef){
+      this.beef = beef;
+      return this;
+    }
+
+    public Hamburger build(){
+      return new Hamburger(this);
+    }
+  }
+}
+
+//鸡肉+牛肉汉堡
+Hamburger hamburger = new Hamburger.Builder()
+                                   .chicken(chicken)
+                                   .beef(beef)
+                                   .build();
+```
