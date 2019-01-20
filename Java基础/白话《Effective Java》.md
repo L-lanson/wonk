@@ -5,8 +5,8 @@
    - [用私有构造器或枚举类型强化Singleton属性](#rule3)
    - [通过私有构造器强化不可实例化的能力](#rule4)
    - [避免创建不必要的对象](#rule5)
-   - [消除过期对象的引用]()
-   - [避免使用中介方法]()
+   - [消除过期对象的引用](#rule6)
+   - [避免使用终结方法](#rule7)
 + [三、所有对象都通用的方法]()
    - [覆盖equals请遵守通用约定]()
    - [覆盖equals时总要覆盖hashCode]()
@@ -419,3 +419,88 @@ long l = 1;
 ```
 
 **前面说到避免创建对象，很容易让人联想到对象池。但是对象池的维护成本大，而且占用更多的内存，因此数据库连接、线程等重量级对象才适合使用对象池，一般轻量级对象不适合采用对象池维护**
+
+### <span id="rule6">第6条： 消除过期对象的引用</span>
+不清除过期对象的引用，有可能会造成内存泄露。内存泄漏包含以下几种情形：   
+1. 维护过期引用
+>过期引用：永远也不会再被解除的引用
+```Java
+//栈类 v1.0
+//因为elements数组会一直保持对象的引用，所以会造成内存泄漏，需要手动对过期引用置为null
+public class Stack{
+  private Object[] elements;
+  private int size;
+
+  public Object pop(){
+    return elements[--size];
+  }
+}
+
+//栈类 v2.0
+//pop时解除引用，不会造成内存泄漏
+public class Stack{
+  private Object[] elements;
+  private int size;
+
+  public Object pop(){
+    Object result = elements[--size];
+    elements[--size] = null;
+    return result;
+  }
+}
+```
+
+2. 使用缓存
+>一旦把对象放到缓存中，就很容易被遗忘掉，从而使得它很长时间没有被使用并存留在缓存中。   
+如果缓存中的对象只要没有被外部引用就过期，那么可以使用WeakHashMap替代缓存。   
+一般情况下，缓存中的对象随着时间推移，就会越来越没有价值，因此可以开启后台线程定时清理。
+
+3. 监听器和其他回调
+>如果客户端在API中注册回调，但是释放对象时没有显式地取消，这些回调会积聚起来，造成内存泄漏。解决办法是只保存这些回调的弱引用，比如将它们保存成WeakHashMap中的键。
+
+### <span id="rule7">第7条： 避免使用终结方法</span>
+如果需要在对象终结时回收资源，需要提供一个显式的终结方法（如：InputStream的close()），而不是在finalize方法中回收资源。
+#### finalize方法的缺点：   
+1. 终结方法不确保会被及时执行，甚至不确保会被执行，虽然System.runFinalizersOnExit()与Runtime.runFinalizersOnExit()能确保终结方法被执行，但是这两个方法有致命缺陷，已经被废弃。
+
+2. 终结方法会屏蔽未被捕获的异常。
+
+3. 终结方法有严重的性能损失，覆盖了finalize方法的对象在销毁时会耗费更多的时间。
+
+#### finalize方法的合法用途
+1. 当调用者忘了调用显式的终结方法回收资源时，finalize可以充当“安全网”。
+
+2. 回收本地对等体的资源
+>本地对等体是一个native对象，普通对象的native方法需要委托给native对象执行，因为native对象不是普通对象，所以它是不会被垃圾回收器知道的。而finalize方法是native方法，它可以回收native对象拥有的关键资源。
+
+#### 正确使用finalize方法
+1. 终结方法链不会自动执行
+>如果子类覆盖了finalize方法，那么必须在子类的finalize中手动地调用父类的finalize方法。   
+为了确保父类的finalize被执行，需要在finally中调用父类的finalize方法。
+```Java
+@Override
+protected void finalize() throws Throwable{
+  try{
+    ...
+  }catch(Exception e){
+    ...
+  }finally{
+    super.finalize();
+  }
+}
+```
+
+2. 为了弥补子类忘了调用父类finalize带来的缺陷，可以设置终结方法守卫者
+>终结方法守卫者其实是个匿名类的实例，该实例被外部类对象的成员变量引用，继承finalize方法来释放外部类对象中的资源。当外部类对象被回收时，它的成员变量指向的对象也会被回收，因此终结方法守卫者的finalize方法可以被执行。
+
+```Java
+public class Parent{
+  private Object o = new Object(){
+    @Override
+    protected void finalize() throws Throwable{
+    //释放外部类资源
+    ...
+  }
+}
+
+```
