@@ -3,8 +3,8 @@
    - [考虑用静态工厂方法代替构造器](#rule1)
    - [遇到多个构造器参数时要考虑用构建器（Builder）](#rule2)
    - [用私有构造器或枚举类型强化Singleton属性](#rule3)
-   - [通过私有构造器强化不可实例化的能力]()
-   - [避免创建不必要的对象]()
+   - [通过私有构造器强化不可实例化的能力](#rule4)
+   - [避免创建不必要的对象](#rule5)
    - [消除过期对象的引用]()
    - [避免使用中介方法]()
 + [三、所有对象都通用的方法]()
@@ -280,13 +280,13 @@ public class Singleton{
 }
 
 //获取单例对象
-Singleton s = Singleton.INSTANCE;
+Singleton s = Singleton.newInstance();
 ```
 
 3. 枚举
 >单元素的enum类型已经成为实现Singleton的最佳方法，无论是反射还是反序列化，都无法改变其单例属性。   
 首先，enum类型天生就无法被实例化，因此反射无法破坏其单例属性。   
-再者，对枚举来说，反序列化返回的枚举对象`==`被序列化的枚举对象，因此反序列化时无需额外的操作来保障其单例属性。
+再者，对枚举来说，反序列化得到的枚举对象`==`被序列化的枚举对象，因此反序列化时无需额外的操作来保障其单例属性。
 
 ```Java
 public enum Singleton{
@@ -296,4 +296,126 @@ public enum Singleton{
     ......
   }
 }
+
+//获取单例对象
+Singleton s = Singleton.INSTANCE;
 ```
+
+
+### <span id="rule4">第4条： 通过私有构造器强化不可实例化的能力</span>
+强化类不可实例化的能力通常有两种做法：    
+1. 将类做成抽象类
+>这是行不通的，抽象类可以被子类化，子类可以被实例化。   
+这种类是专门为了继承而设计的，父子类之间不是`is-a`关系，可能会带来很多问题。
+
+2. 私有构造器
+>如果类不包含显式构造器，编译器会生成默认的构造器，因此不提供显式构造器的类也可以被实例化。为了强化不可实例化的能力，我们需要显式地私有化它的构造函数，并且在构造函数中抛异常。
+
+```Java
+//工具类
+public class Util{
+  private Util(){
+    throw new AssertionError();
+  }
+
+  //一系列静态工具方法
+  ...
+}
+
+```
+
+### <span id="rule5">第5条： 避免创建不必要的对象</span>
+1. 如果对象是不可变的，它始终可以被重用
+>对于String，JVM提供了重用机制。如果常量池中不存在该字符串，就会创建一个字符串对象并存入常量池中；否则直接从常量池中返回该字符串对象。
+
+```Java
+//始终创建新对象，不建议使用
+String s = new String("abc");
+//只有在常量池不存在该对象时才创建新对象
+String s = "abc";
+```
+
+2. 除了重用不可变对象之外，还可以重用不会被修改的可变对象   
+   * 不会被修改的可变对象（常量对象）
+
+```Java
+//小明 v1.0
+//他的生日不会改变
+//每次调用isBirthday都创建一个Date实例，开销大
+public class XiaoMing{
+  private Date birthday;
+
+  //判断某个日期是否是1小明的生日
+  public boolean isBirthday(Date date){
+    birthday = new Date(1996, 05, 16);
+    return birthday.equals(date);
+  }
+}
+
+//小明 v2.0
+//他的生日不会改变
+//只需在类加载时创建一个Date实例，大大地节省了开销
+public class XiaoMing{
+  private static final Date BIRTHDAY = new Date(1996, 05, 16);
+
+  //判断某个日期是否是1小明的生日
+  public boolean isBirthday(Date date){
+    return BIRTHDAY.equals(date);
+  }
+}
+
+//小明 v3.0
+//他的生日不会改变
+//延迟初始化，只需在第一次调用isBirthday时创建一个Date实例，大大地节省了开销
+public class XiaoMing{
+  private static final Date BIRTHDAY;
+
+  //判断某个日期是否是1小明的生日
+  public boolean isBirthday(Date date){
+    if (BIRTHDAY == null) {
+      BIRTHDAY = new Date(1996, 05, 16);
+    }
+    return BIRTHDAY.equals(date);
+  }
+}
+```
+
+  * 考虑适配器的情形
+   >适配器是指这样一个对象：它把功能委托给一个后备对象，从而为后备对象提供一个可替代的接口。适配器有时候也叫视图，例如：Map接口的entrySet方法返回该Map对象的Set视图
+
+```Java
+public class HashMap<K,V> extends AbstractMap<K,V> implements Map<K,V>, Cloneable, Serializable {
+  transient Node<K,V>[] table;
+  transient Set<K> keySet;
+
+  //由于视图直接使用外部类的table变量，
+  //因此当table发生变化时这个视图也能感知
+  //所以只需要一个keySet对象即可，无需每次调用都新建对象
+  public Set<K> keySet() {
+    Set<K> ks = keySet;
+    if (ks == null) {
+        ks = new KeySet();
+        keySet = ks;
+    }
+    return ks;
+  }
+
+  final class KeySet extends AbstractSet<K> {
+    public final void forEach(Consumer<? super K> action) {
+      //遍历table数组及Entry链表
+    }
+  }
+}
+```
+
+3. 使用基本类型而不是装箱类型，要当心无意识的自动装箱
+>自动装箱会新建对象，带来性能上的开销
+
+```Java
+//不建议
+Long l = 1;
+//建议
+long l = 1;
+```
+
+**前面说到避免创建对象，很容易让人联想到对象池。但是对象池的维护成本大，而且占用更多的内存，因此数据库连接、线程等重量级对象才适合使用对象池，一般轻量级对象不适合采用对象池维护**
