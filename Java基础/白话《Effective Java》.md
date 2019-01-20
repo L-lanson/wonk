@@ -2,7 +2,7 @@
 + [二、创建和销毁对象](#chapter2)
    - [考虑用静态工厂方法代替构造器](#rule1)
    - [遇到多个构造器参数时要考虑用构建器（Builder）](#rule2)
-   - [用私有构造器或枚举类型强化Singleton属性]()
+   - [用私有构造器或枚举类型强化Singleton属性](#rule3)
    - [通过私有构造器强化不可实例化的能力]()
    - [避免创建不必要的对象]()
    - [消除过期对象的引用]()
@@ -129,7 +129,7 @@ Map<String, Person> persons = new HashMap<>();
 汉堡包（Hamburger）由很多原料组成，加鸡肉（Chicken）可以做出鸡肉汉堡，加牛肉（Beef）可以做出牛肉汉堡，两样都加可以做出鸡肉+牛肉汉堡。以下提供三种方式实现这个汉堡。
 
 1. 重叠构造器模式
->这种方式加入了很多冗余参数，不仅造成阅读困难，还有可能因为调用者传错参数而造成项目出错
+>这种方式加入了很多冗余参数，不仅造成阅读困难，还有可能因为调用者传错参数而造成项目出错。
 
 ```Java
 //层叠构造器的方式
@@ -159,8 +159,8 @@ Hamburger chickenBeefHamburger = new Hamburger(chicken, beef);
 ```
 
 2. JavaBeans模式
->对象创建与设值分开，容易造成对象状态不一致，因为对象在设值的时候有可能被其他对象修改   
-JavaBeans模式阻止了把类做成不可变的状态，天生不是线程安全的，因为它提供了setter方法供外界修改其状态
+>对象创建与设值分开，容易造成对象状态不一致，因为对象在设值的时候有可能被其他对象修改。   
+JavaBeans模式阻止了把类做成不可变的状态，天生不是线程安全的，因为它提供了setter方法供外界修改其状态。
 
 ```Java
 public class Hamburger{
@@ -185,10 +185,10 @@ hamburger.setBeef(beef);
 ```
 
 3. 构建器（Builder）模式
->相比JavaBeans模式，Builder模式可以在在构造出对象之前设置属性，因此它可以保证对象状态的一致性   
-相比重叠构造器模式，Builder模式可以有多个可变参数，调用者可以根据需要自由选择，不会产生参数冗余   
-但是Builder模式也有缺点，它多创建了Builder对象，性能会稍微有点降低。另外它的写法也比较冗长，因此多个参数（4个以上）时才适合使用   
-要使用Builder模式，最好一开始就使用，而不是等参数增多时才改成Builder模式，因为这种修改可能会造成调用者的旧API出现问题
+>相比JavaBeans模式，Builder模式可以在在构造出对象之前设置属性，因此它可以保证对象状态的一致性。   
+相比重叠构造器模式，Builder模式可以有多个可变参数，调用者可以根据需要自由选择，不会产生参数冗余。   
+但是Builder模式也有缺点，它多创建了Builder对象，性能会稍微有点降低。另外它的写法也比较冗长，因此多个参数（4个以上）时才适合使用。   
+要使用Builder模式，最好一开始就使用，而不是等参数增多时才改成Builder模式，因为这种修改可能会造成调用者的旧API出现问题。
 
 ```Java
 //构建器接口
@@ -232,4 +232,68 @@ Hamburger hamburger = new Hamburger.Builder()
                                    .chicken(chicken)
                                    .beef(beef)
                                    .build();
+```
+
+### <span id="rule3">第3条： 用私有构造器或者枚举类型增强Singleton属性</span>
+JDK1.5之前，实现Singleton有两种方式：一种是通过公有的静态常量向外界提供本对象的实例，另一种通过公有的静态工厂方法向外界提供本对象的实例。这两种方式都要求构造方法私有。   
+但是这样依然有可能通过反射来破坏单例属性，因此需要在构造方法中加非法判断，在存在多个实例时做相应处理。   
+还有一种破坏单例属性的方法是序列化和反序列化，为了保证Singleton，必须声明所有实例域都是transient（瞬时的），并提供readResolve方法。反序列化时会调用readResolve方法，并返回里面的对象，不用创建新对象了。   
+JDK1.5之后还可以通过enum实现Singleton。   
+
+1. 静态常量
+>实现单一，只能通过赋值来实现，如果要改变单例的行为（比如为一个线程返回单一实例等），可能需要调用者修改代码
+
+```Java
+//单例类
+public class Singleton{
+  public static final Singleton INSTANCE = new Singleton();
+
+  private Singleton(){}
+
+  public Object readResolve(){
+    return INSTANCE;
+  }
+}
+
+//获取单例对象
+Singleton s = Singleton.INSTANCE;
+```
+
+2. 静态工厂方法
+>优点：   
+1、JVM会将静态工厂方法的调用内联化。一般的方法调用需要入栈出栈，而内联化就是将静态工厂方法的内容移到调用方法中，省去了频繁出入栈的开销。   
+2、在不改变API的前提下，可以改变该单例类的行为，弥补静态常量的缺点。
+
+```Java
+public class Singleton{
+  private static final Singleton INSTANCE = new Singleton();
+
+  private Singleton(){}
+
+  public Object readResolve(){
+    return INSTANCE;
+  }
+
+  public static Singleton newInstance(){
+    return INSTANCE;
+  }
+}
+
+//获取单例对象
+Singleton s = Singleton.INSTANCE;
+```
+
+3. 枚举
+>单元素的enum类型已经成为实现Singleton的最佳方法，无论是反射还是反序列化，都无法改变其单例属性。   
+首先，enum类型天生就无法被实例化，因此反射无法破坏其单例属性。   
+再者，对枚举来说，反序列化返回的枚举对象`==`被序列化的枚举对象，因此反序列化时无需额外的操作来保障其单例属性。
+
+```Java
+public enum Singleton{
+  INSTANCE;
+
+  public void xxx(){
+    ......
+  }
+}
 ```
