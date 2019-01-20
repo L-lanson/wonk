@@ -7,8 +7,8 @@
    - [避免创建不必要的对象](#rule5)
    - [消除过期对象的引用](#rule6)
    - [避免使用终结方法](#rule7)
-+ [三、所有对象都通用的方法]()
-   - [覆盖equals请遵守通用约定]()
++ [三、所有对象都通用的方法](#chapter3)
+   - [覆盖equals请遵守通用约定](#rule8)
    - [覆盖equals时总要覆盖hashCode]()
    - [始终要覆盖toString]()
    - [谨慎地覆盖clone]()
@@ -477,6 +477,7 @@ public class Stack{
 1. 终结方法链不会自动执行
 >如果子类覆盖了finalize方法，那么必须在子类的finalize中手动地调用父类的finalize方法。   
 为了确保父类的finalize被执行，需要在finally中调用父类的finalize方法。
+
 ```Java
 @Override
 protected void finalize() throws Throwable{
@@ -490,8 +491,8 @@ protected void finalize() throws Throwable{
 }
 ```
 
-2. 为了弥补子类忘了调用父类finalize带来的缺陷，可以设置终结方法守卫者
->终结方法守卫者其实是个匿名类的实例，该实例被外部类对象的成员变量引用，继承finalize方法来释放外部类对象中的资源。当外部类对象被回收时，它的成员变量指向的对象也会被回收，因此终结方法守卫者的finalize方法可以被执行。
+2. 为了弥补子类忘了调用父类finalize带来的缺陷，可以设置终结方法守卫者。
+>终结方法守卫者其实是个匿名类的实例，该实例被外部类对象的成员变量引用，继承finalize方法来释放外部类对象中的资源。当外部类对象被回收时，它的成员变量指向的对象也会被回收，因此终结方法守卫者的finalize方法可以被执行。   
 
 ```Java
 public class Parent{
@@ -502,5 +503,161 @@ public class Parent{
     ...
   }
 }
-
 ```
+
+## <span id="chapter3">三、对于所有对象都通用的方法</span>
+
+### <span id="rule8">第8条： 覆盖equals时请遵守通用约定</span>
+
+#### 不覆盖equals方法的场景
+1. 类的每个实例本质上都是唯一的
+>如Thread类，每个线程都是唯一的
+2. 不关心类是否逻辑相等
+>对于一个类，如果没必要覆盖equals方法进行逻辑比较，就不用覆盖equals方法
+3. 超类已经覆盖了equals，从超类继承过来的行为对子类也是合适的
+>如：大多数Set实现都从AbstractSet继承equals实现，List实现从AbstractList继承equals实现
+
+#### 覆盖equals方法的场景
+1. 不希望equals方法被调用
+```
+@Override
+public boolean equals(Object o){
+  throw new AssertionError();
+}
+```
+
+2. 如果类需要判断逻辑相等，而且超类没有覆盖equals方法来实现期望的行为
+
+#### 覆盖equals方法需遵守的规范
+1. 自反性
+>对于任意非null的引用值x，有`x.equals(x)`。
+
+2. 对称性
+>对于任意非null的引用值x、y，若`x.equals(y)==true`，则必须有`y.equals(x)==true`。
+
+```Java
+//违反对称性
+public class CaseInsensitiveString{
+  private String s;
+
+  public CaseInsensitiveString(String s){
+    this.s = s;
+  }
+
+  @Override
+  public boolean equals(Object o){
+    if(o instanceof CaseInsensitiveString){
+      return s.equalsIgnoreCase(((CaseInsensitiveString) o).s);
+    }
+
+    if (o instanceof String) {
+      return s.equalsIgnoreCase((String) o);
+    }
+    return false;
+  }
+}
+
+//违反对称性示例
+String s = "a";
+CaseInsensitiveString c = new CaseInsensitiveString("A");
+s.equals(c);//false
+c.equals(s);//true
+```
+
+3. 传递性
+>对于任意非null的引用值x、y、z，若`x.equals(y)==true,y.equals(z)==true`，则必须有`x.equals(z)==true`。
+
+```Java
+//违反传递性例子
+//不带颜色点类
+public class Point{
+  private int x;
+  private int y;
+
+  public Point(int x, int y){
+    this.x = x;
+    this.y = y;
+  }
+
+  @Override
+  public boolean equals(Object o){
+    if (o instanceof Point) {
+      Point p = (Point) o;
+      return p.x == x && p.y == y;
+    }
+    return false;
+  }
+}
+
+//带颜色的点类
+public class ColorPoint extends Point{
+  private int x;
+  private int y;
+  private Color color;
+
+  public ColorPoint(int x, int y, Color color){
+    this.x = x;
+    this.y = y;
+    this.color = color;
+  }
+
+  @Override
+  public boolean equals(Object o){
+    if (o instanceof Point) {
+      Point p = (Point) o;
+      return p.x == x && p.y == y;
+    }
+
+    if (o instanceof ColorPoint) {
+      ColorPoint cp = (ColorPoint) o;
+      return super.equals(cp) && cp.color == color;
+    }
+    return false;
+  }
+}
+
+//违反传递性示例
+ColorPoint x = new ColorPoint(1, 1, Color.RED);
+Point y = new Point(1, 1);
+ColorPoint z = new ColorPoint(1, 1, Color.BLUE);
+x.equals(y);//true
+y.equals(z);//true
+x.equals(z);//false
+```
+
+**上述例子描述了父子类相互比较造成了equals的传递性被破坏，有两种解决方案：**   
+* **复合优先于继承，可以将Point和Color复合成ColorPoint，而不是以继承的方式实现**
+* **将父类声明成抽象类，Point和Color都继承这个抽象父类**
+
+4. 一致性
+>如果`x.equals(y)==true`，除非x和y任意一方被修改了，否则将一直保持`x.equals(y)==true`。因此equals方法不要依赖于不可靠的资源。比如URI的equals方法中对主机IP地址的比较，可能会受到网络的影响
+
+5. 非空性
+>对任意x，都有`x.equals(null) == false`
+
+#### 编写高质量equals方法的诀窍
+```Java
+//用上面的Point类举例
+@Override
+public boolean equals(Object o){
+  //1. 用"=="检查参数o是否为这个对象的引用
+  if (o == this) {
+    return true;
+  }
+  //2. 用instanceof检查参数是否为·正确的类型
+  if (!(o instanceof Point)) {
+    return false;
+  }
+  //3. 将参数转换为正确的类型
+  Point p = (Point) o;
+  //4. 比较类中每个关键域并返回结果
+  return p.x==x &&p.y==y;
+}
+```
+
+#### 对覆盖equals方法的一些告诫
+1. 覆盖equals时总要覆盖hashCode
+2. 不要企图让equals方法过于智能
+>只需简单地实现逻辑比较就好，太重的话可能会违背前面的规范。
+3. 不要将equals方法的入参替换为Object以外的类型
+>如果将参数的Object改成其他类型，那么就变成了方法重载而不是覆盖了，如果通过父类调用子类的equals方法可能会产生错误的行为。为了避免这种情况应该在方法前加上`@Override`，如果不是方法覆盖会产生编译时错误。
