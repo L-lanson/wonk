@@ -9,13 +9,10 @@
    - [避免使用终结方法](#rule7)
 + [三、所有对象都通用的方法](#chapter3)
    - [覆盖equals请遵守通用约定](#rule8)
-   - [覆盖equals时总要覆盖hashCode]()
-   - [始终要覆盖toString]()
-   - [谨慎地覆盖clone]()
-   - [考虑实现Comparable接口]()
-   - []()
-   - []()
-   - []()
+   - [覆盖equals时总要覆盖hashCode](#rule9)
+   - [始终要覆盖toString](#rule10)
+   - [谨慎地覆盖clone](#rule11)
+   - [考虑实现Comparable接口](#rule12)
 + [四、类和接口]()
    - [使类和成员的可访问性最小化]()
    - [在公有类中使用访问方法而非公有域]()
@@ -661,3 +658,233 @@ public boolean equals(Object o){
 >只需简单地实现逻辑比较就好，太重的话可能会违背前面的规范。
 3. 不要将equals方法的入参替换为Object以外的类型
 >如果将参数的Object改成其他类型，那么就变成了方法重载而不是覆盖了，如果通过父类调用子类的equals方法可能会产生错误的行为。为了避免这种情况应该在方法前加上`@Override`，如果不是方法覆盖会产生编译时错误。
+
+### <span id="rule9">第9条： 覆盖equals时总要覆盖hashCode</span>
+#### 覆盖equals时总要覆盖hashCode
+>如果覆盖equals时没有覆盖hashCode，则无法结合所有基于hash的集合一起运作。基于散列的集合有HashMap、HashTable、HashSet，它们都需要通过hash函数找到对应的桶，然后进行操作。
+```Java
+//覆盖equals但是没覆盖hashCode
+public class PhoneNumber{
+  private int areaCode;
+  private int prefix;
+  private int lineNumber;
+
+  public PhoneNumber(int areaCode, int prefix, int lineNumber){
+    this.areaCode = areaCode;
+    this.prefix = prefix;
+    this.lineNumber = lineNumber;
+  }
+
+  @Override
+  public boolean equals(Object o){
+  	if(this == o){
+  	  return true;
+  	}
+  	if(!(o instanceof PhoneNumber)){
+  	  return false;
+  	}
+  	PhoneNumber p = (PhoneNumber) o;
+  	return areaCode==o.areaCode
+  		&& prefix == o.prefix
+  		&& lineNumber == o.lineNumber;
+  }
+}
+
+PhoneNumber p1 = new PhoneNumber(1, 1, 1);
+PhoneNumber p2 = new PhoneNumber(1, 1, 1);
+//由于PhoneNumber没有覆盖hashCode
+//所以p1、p2的hashCode函数会产生不同的值，可能会放到不同的散列通中
+//即使`p1.equals(p2)==true`，但是在HashMap中会同时存在p1、p2
+hashMap.put(p1, 0);
+hashMap.put(p2, 1);
+```
+
+#### 一个好的散列函数
+一个好的散列函数通常倾向于”为不相等的对象产生不相等的散列码“，理想情况下，散列函数应该把集合中不相等的实例均匀地分布到所有可能的散列值上。
+>以下是计算一个好的散列值的简单解决办法：
+1. result=非0常数值，如17；
+2. 为每个关键域f计算int散列码c：
+   * 若f是boolean类型，则计算(f?0:1)
+   * 若f是byte、char、short或者int类型，则计算(int) f
+   * 若f是long类型，则计算(int)(f^(f>>>32))
+   * 若f是float类型，则计算Float.float
+   * 若f是double类型，则计算Double.doubleToIntBits(f)，得到long类型数值后根据上述方法计算long的散列值
+   * 若f是一个对象的引用，则直接调用hashCode
+   * 若f是一个数组，则根据上述方法对数组中的每个值进行计算
+3. 针对每个关键域，根据`result=31*result+c`得出散列值
+
+**由于1中result的初始值为0，2中计算出来的c如果为0会影响散列值；**   
+**之所以选择31，因为它是奇素数。如果是偶数，可能会乘法溢出；习惯上使用素数计算散列值，31有更好的性能，因为它可以根据移位和减法得到**
+
+#### 关于散列函数的一些建议
+1. 如果一个类是不可变的，应该将它的散列码缓存起来，不用每次都重新计算增加开销。
+2. 如果一个类的散列码确定被用到，则在创建实例的时候初始化散列码，否则在hashCode函数中延迟初始化。
+3. 不要试图从散列码计算中排除一个对象的关键部分来提高性能，这样计算出来的散列码可能分布不均匀。
+
+### <span id="rule10">第10条： 始终要覆盖toString</span>
+如果不覆盖toString，它打印出来的值：类名@散列码的无符号16进制表示法；提供好的toString实现可以使类用起来更加舒适。
+
+#### 覆盖toString方法的建议
+1. toString方法应该返回对象中包含的所有值得关注的信息
+2. 决定是否在文档中指定返回值得格式，并提供静态工厂或构造方法在对象与字符串之间转换
+>如果制定了格式，则失去了灵活性，日后进行改动会对以前的代码造成破坏
+3. 无论是否决定指定格式，都应该在文档中表明意图
+4. 为toString返回值中包含的所有信息，提供一种编程式的访问路径
+```Java
+public class PhoneNumber{
+  private int areaCode;
+  private int prefix;
+  private int lineNumber;
+
+  public PhoneNumber(int areaCode, int prefix, int lineNumber){
+    this.areaCode = areaCode;
+    this.prefix = prefix;
+    this.lineNumber = lineNumber;
+  }
+
+  //提供areaCode、prefix、lineNumber的访问路径
+  //能省去解析toString返回值的开销
+  public int getAreaCode(){
+    return areaCode
+  }
+
+  public int getPrefix(){
+    return prefix;
+  }
+
+  public int getLineNumber(){
+    return lineNumber;
+  }
+
+  /**
+   * 返回areaCode+"-"+prefix+lineNumber
+   */
+  @Override
+  public String toString(){
+	  return areaCode+"-"+prefix+lineNumber;
+  }
+}
+```
+
+### <span id="rule11">第11条： 谨慎地覆盖clone</span>
+#### 覆盖clone的缺点
+1. clone方法是protected的，它只能被同包类或者子类调用。而覆盖clone方法需要实现Clonable接口，这个接口没有规范实现类的行为，而是改变了超类中protected方法的行为；
+2. 因为clone时会给类中的每个可变对象域赋值，此时该域不能声明为final
+
+
+#### 覆盖clone的建议
+1. clone中不应该通过构造器新建对象，而是通过super.clone()得到对象，否则会抛类型转换异常。如果所有超类都遵守这个规则，那么最终调用的是Object的clone方法。
+```Java
+public class B implements Cloneable{
+  @Override
+  protected Object clone() throws CloneNotSupportedException {
+    // TODO Auto-generated method stub
+    //调用C的clone时不会抛类型转换异常
+    B b = (B) super.clone();
+    //调用C的clone时不会抛类型转换异常
+    //B b = new B();
+    return b;
+  }
+}
+
+public class C extends B implements Cloneable{
+  @Override
+  protected Object clone() throws CloneNotSupportedException {
+    // TODO Auto-generated method stub
+  	C c = (C) super.clone();
+  	return c;
+  }
+}
+```
+
+2. clone应返回实际类型而不是Object，不要让调用者去强转
+```Java
+//调用clone方法时调用者无需强转
+public class B implements Cloneable{
+  @Override
+  protected B clone() throws CloneNotSupportedException {
+  	// TODO Auto-generated method stub
+  	B b = (B) super.clone();
+  	return b;
+  }
+}
+```
+
+3. 不与原始对象共享同一个对象，避免原始对象受到伤害
+```Java
+public class Stack implements Cloneable{
+  private int size;
+  private Object[] elements;
+
+  @Override
+  protected Stack clone(){
+  	try{
+  	  Stack stack = (Stack)super.clone();
+  	  //拷贝出新的数组对象，防止共享elements
+  	  stack.elements = elements.clone();
+  	  return stack;
+  	}catch(CloneNotSupportedException e){
+  	  throw new CloneNotSupportedException();
+  	}
+  }
+}
+```
+
+4. 克隆复杂的对象，可以先调用super.clone()得到克隆对象，然后清空所有域，再调用高层方法重新产生对象的状态，但这样做效率会比较慢
+```Java
+public class HashMap implements Cloneable{
+  private Entry[] buckets;
+
+  //方法权限为private或者public final
+  //这样做是为了避免在clone时被子类修改状态
+  public final void put(Object key, Object value){
+	  ...
+  }
+
+  @Override
+  protected HashMap clone(){
+  	try{
+  	  HashMap map = (HashMap)super.clone();
+  	  //拷贝出新的数组对象，防止共享elements
+  	  map.clear();
+  	  //调用上层方法添加元素
+  	  for(Map.Entry entry : entrySet){
+  		map.put(entry.key, entry.value);
+  	  }
+  	  return map;
+  	}catch(CloneNotSupportedException e){
+  	  throw new CloneNotSupportedException();
+  	}
+  }
+}
+```
+
+5. 如果是public的clone方法，不抛出CloneNotSupportedException；如果是为了继承而设计的类，覆盖的clone方法声明应该跟Object一致
+
+6. 使用拷贝构造器或者拷贝工厂要比覆盖clone方法好
+>好处：   
+1. 不依赖有风险的、语言之外的对象创建机制；
+2. 不要求遵守尚未制定好文档的规范；
+3. 不会与final域发生冲突；
+4. 不会抛出不必要的受检查异常；
+5. 不需要类型转换。
+
+```Java
+//拷贝构造器
+public class HashMap{
+  //入参为接口，允许调用者选择拷贝的类型
+  public HashMap(Map m){
+    ...
+  }
+}
+
+
+//拷贝工厂
+public class HashMap{
+  public static HashMap newInstance(Map m){
+    ...
+  }
+}
+```
+
+7. 对于一个专门为继承设计的类，如果父类未能提供好的protected的clone方法，它的子类就不能实现Cloneable接口
