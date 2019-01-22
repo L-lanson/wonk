@@ -13,9 +13,9 @@
    - [始终要覆盖toString](#rule10)
    - [谨慎地覆盖clone](#rule11)
    - [考虑实现Comparable接口](#rule12)
-+ [四、类和接口]()
-   - [使类和成员的可访问性最小化]()
-   - [在公有类中使用访问方法而非公有域]()
++ [四、类和接口](#chapter4)
+   - [使类和成员的可访问性最小化](#rule13)
+   - [在公有类中使用访问方法而非公有域](#rule14)
    - [使可变性最小化]()
    - [复合优先于继承]()
    - [要么为继承而设计，并提供文档说明，要么禁止继承]()
@@ -888,3 +888,171 @@ public class HashMap{
 ```
 
 7. 对于一个专门为继承设计的类，如果父类未能提供好的protected的clone方法，它的子类就不能实现Cloneable接口
+
+### <span id="rule12">第12条： 考虑实现Comparable接口</span>
+#### Comparable接口的优点
+1. Comparable声明了compareTo方法，表明它的实例具有内在排序关系
+2. 实现了Comparable接口的类可以跟许多泛型算法以及依赖于该接口的集合进行协作。
+```Java
+//String实现了Comparable接口，可以与有序的TreeSet协作
+//加入TreeSet后args会变得有序
+public static void main(String[] args){
+	Set<String> set = new TreeSet<String>()
+	Collection.addAll(s, args);
+}
+```
+
+#### Comparable接口的约定
+1. 自反性
+>x.compareTo(x)==0
+
+2. 对称性
+>x.compareTo(y)==y.compareTo(x)
+
+3. 传递性
+>x.compareTo(y)>0，y.compareTo(z)>0，x.compareTo(z)>0
+
+4. 强烈建议：始终保持x.compareTo(y)==0与x.equals(y)等价
+>集合接口约定通过equals来进行同等性测试，而有序集合使用compareTo而不是equals，如果二者不等价，则可能产生错误的行为
+```Java
+BigDecimal b1 = new BigDecimal("1.0");
+BigDecimal b2 = new BigDecimal("1.00");
+
+//往里面添加b1、b2后保存两个元素
+Set<BigDecimal> hashSet = new HashSet<>();
+...
+
+//往里面添加b1、b2后只保存一个元素
+Set<BigDecimal> hashSet = new TreeSet<>();
+...
+```
+
+#### 实现Comparable接口的建议
+1. 对于整数型基本数据类型，可用"<"、">"、"=="进行比较，对于浮点型应用Double.compareTo和Float.compareTo进行比较
+
+2. 如果类有多个关键域，应该按重要程度由高到低逐域比较
+```Java
+public class PhoneNumber implements Comparable{
+	private int areaCode;
+	private int prefix;
+	private int lineNumber;
+
+	@Override
+	public int compareTo(PhoneNumber pn) {
+		//比较areaCode
+		if(areaCode > pn.areaCode){
+			return 1;
+		}
+		if(areaCode < pn.areaCode){
+			return -1;
+		}
+
+		//比较prefix
+		if(prefix > pn.prefix){
+			return 1;
+		}
+		if(prefix < pn.prefix){
+			return -1;
+		}
+
+		//比较lineNumber
+		if(lineNumber > pn.lineNumber){
+			return 1;
+		}
+		if(lineNumber < pn.lineNumber){
+			return -1;
+		}
+		return 0;
+	}
+}
+```
+
+3. 可用减法比较每个域的大小
+>这种方法虽然效率更高，但是可能导致减法溢出。假如Integer.MAX_VALUE与Integer.MIN_VALUE1相减，会返回一个负数
+```Java
+public class PhoneNumber implements Comparable{
+	private int areaCode;
+	private int prefix;
+	private int lineNumber;
+
+	@Override
+	public int compareTo(PhoneNumber pn) {
+		//比较areaCode
+		int areaDiff = areaCode - pn.areaCode;
+		if(areaDiff != 0){
+			return areaCode;
+		}
+
+		//比较prefix
+		int prefixDiff = prefix - pn.prefix;
+		if(prefixDiff != 0){
+			return prefixDiff;
+		}
+
+		//比较lineNumber
+		return lineNumber - pn.lineNumber;
+	}
+}
+```
+
+## <span id="chapter4">第四章： 类和接口</span>
+>介绍一些设计类和接口的指导原则，使开发者能设计出更加有用、健壮和灵活的类和接口
+
+### <span id="rule13">第13条： 使类和成员的可访问性最小化</span>
+
+#### 可访问性最小化的优点
+1. 解耦，使系统中各个模块可以单独开发、测试、维护。
+>类与接口的可访问性越小，被外界访问的组件越少，一个模块的改动对其他模块的影响就越小。
+
+#### 可访问性最小化的规则
+1. 尽可能使每个类成员不被外界访问
+>对于包导出API，修改可能会导致调用者进行改变。而对于包级私有的成员，修改和维护都不会对调用者产生影响。   
+如果包级私有的类只在一个类中被使用到，应该考虑将它改成使用类的私有内部类。
+```Java
+//A只会被B使用
+class A{
+	...
+}
+
+//对于上述类A，应该将它设计为B的私有内部类
+class B{
+	private class A{
+		...
+	}
+	...
+}
+```
+
+2. 不能为了测试而将类和接口作为包导出API，解决方案就是将测试程序作为被测试包的一部分运行。
+
+3. 实例域不能是公有的
+>公有的实例域丧失了以后对其进行修改的灵活性，应该提供API对其进行访问而不是直接暴露实例域。   
+对于数组，在不影响原数组的情况下，有两种方式提供给外界访问。
+```Java
+//第一种：为数组增加公有的不可变列表
+public class Array{
+	private static final Object[] ELEMENTS = {};
+
+	public static List<Object> getElements(){
+		return Collections.unmodifiableList(Arrays.asList(ELEMENTS));
+	}
+}
+
+//第二种：返回数组的拷贝
+public class Array{
+	private static final Object[] ELEMENTS = {};
+
+	public static List<Object> getElements(){
+		return ELEMENTS.clone();
+	}
+}
+```
+
+### <span id="rule14">第14条： 在公有类中使用访问方法而非公有域</span>
+1. 修改访问方法的实现对调用者透明，无需调用者对自己的程序进行调整。
+
+2. 如果类是包级私有或者私有的嵌套类，可以暴露数据域
+>这种情况下如果进行改动，只会影响同包类或者外部类，不会对外界调用产生影响。
+
+3. 如果成员是常量，并且它指向基本变量类型或者不可变类，则可以直接暴露给外部。
+>对于`public static final`修饰的可变类或者数组，都有可能被外部直接修改，可以通过访问方法返回其不可变的包装或者它的拷贝，如上述代码所示。
