@@ -16,14 +16,14 @@
 + [四、类和接口](#chapter4)
    - [使类和成员的可访问性最小化](#rule13)
    - [在公有类中使用访问方法而非公有域](#rule14)
-   - [使可变性最小化]()
-   - [复合优先于继承]()
-   - [要么为继承而设计，并提供文档说明，要么禁止继承]()
-   - [接口优先于抽象类]()
-   - [接口只用于定义类型]()
-   - [类层次优先于标签类]()
-   - [用函数对象表示策略]()
-   - [优先考虑静态成员类]()
+   - [使可变性最小化](#rule15)
+   - [复合优先于继承](#rule16)
+   - [要么为继承而设计，并提供文档说明，要么禁止继承](#rule17)
+   - [接口优先于抽象类](#rule18)
+   - [接口只用于定义类型](#rule19)
+   - [类层次优先于标签类](#rule20)
+   - [用函数对象表示策略](#rule21)
+   - [优先考虑静态成员类](#rule22)
 + [五、泛型]()
 + [六、枚举和注解]()
 + [七、方法]()
@@ -1056,3 +1056,236 @@ public class Array{
 
 3. 如果成员是常量，并且它指向基本变量类型或者不可变类，则可以直接暴露给外部。
 >对于`public static final`修饰的可变类或者数组，都有可能被外部直接修改，可以通过访问方法返回其不可变的包装或者它的拷贝，如上述代码所示。
+
+### <span id="#rule15">第15条： 使可变性最小化</span>
+#### 可变性最小化的规则
+1. 不要向外部提供任何修改对象状态的方法
+>对调用者而言，类时不可被修改的。但是类可以提供内部可修改的域，比如一些计算开销大的结果可缓存在这些可变域中
+```Java
+//不可变类
+public final class UnChangable{
+	private int hashCode
+	private static final ...
+
+	/**
+	 * 第一次计算出hashCode后将其缓存起来，以后不用每次调用都重新计算
+	 */
+	@Override
+	public int hashCode(){
+		if(hashCode == 0){
+			int result = ...一系列复杂计算
+			hashCode = result;
+		}
+		return hashCode;
+	}
+}
+```
+
+2. 保证类不可以被扩展
+>防止子类状态的改变影响父类的不可变性为，应该将类做成不可被继承（用final修饰类或者将构造方法私有化并提供静态工厂方法）
+```Java
+//父类，不可变，但可扩展
+public class Parent{
+	private static final int A = 1;
+
+	public int getA(){
+		return A;
+	}
+}
+//子类，可变
+public class Son extends Parent{
+	private int a;
+
+	public void setA(int a){
+		this.a = a;
+	}
+
+	@Override
+	public int getA(){
+		return this.a;
+	}
+}
+//用父类引用子类，假装父类的状态被改变
+Parent p = new Son();
+if (p instanceof Son) {
+	Son s = (Son) p;
+	s.setA(2);
+}
+System.out.println(p.getA());//输出2，p被改变了
+```
+
+3. 使所有域都是final的
+>用final修饰方法，方法不可以被覆盖；用final修饰变量，变量不可被改变。
+
+4. 使所有域都是私有的
+>如果变量被final修饰，并且指向数组或者可变类，依然可以被改变。因此要用private修饰，避免被外界使用。
+```Java
+//该类可被改变
+public final class A{
+	public static final int[] ARRAY = new int[5];
+}
+//改变A的常量域
+A.ARRAY[0] = 1;
+```
+
+5. 确保对于任何可变组件的互斥访问
+>如果类中有指向可变对象的域，直接提供给外部访问有可能会被修改，因此要做保护性拷贝。
+```Java
+//该类是不可变类
+public final class A{
+	private static final int[] ARRAY = new int[5];
+
+	public final int[] getArray(){
+		//直接提供给外部访问有可能被修改
+		//return ARRAY;
+
+		//保护性拷贝
+		result ARRAY.clone();
+	}
+}
+```
+
+#### 不可变对象的优缺点
+1. 不可变类是线程安全的，它们不要求同步
+>不可变对象可以被自由地共享。如String，每次访问要么从常量池返回不可变的对象，要么产生新的实例并存到常量池中，不会有任何线程对其状态进行修改。    
+
+2. 不仅可以共享不可变对象，可以以共享它们的内部信息
+```Java
+public final class BigInteger{
+	private static final int[] ELEMENTS;
+
+	public BigInteger(String str){
+		//strToElements...
+	}
+
+	private BigInteger(int[] elements){
+		ELEMENTS = elements;
+	}
+
+	public static final BigInteger negate(){
+		return new BigInteger(ELEMENTS);
+	}
+}
+```
+
+3. 不可变对象为其他对象提供了大量的构件
+>比如String，一经创建就不可以被修改。当它作为HashMap的key时，由于hashCode不会改变，插入和查找都会定位在同一个桶中。
+```Java
+//用可变类StringBuilder作为HashMap的key
+StringBuilder sb = new StringBuilder("sb");
+Map<StringBuilder, Integer> map = new HashMap<>();
+map.put(sb, 1);
+
+//sb添加元素导致hashCode改变了，所以在HashMap中找不出来，但在HashMap中依然存在这个元素
+sb.append("c");
+map.get(sb);//返回null
+```
+
+4. 不可变类的缺点是：对每个不同的值都要创建单独的对象，影响性能
+>解决办法：可变配套类。例如String有StringBuilder和StringBuffer这两个可变配套类，当使用不可变类严重影响了性能时，可以使用它的可变配套类。
+
+### <span id="#rule16">第16条： 复合优先于继承</span>
+
+#### 继承的缺点
+1. 继承打破了封装性
+>子类依赖于父类，父类的改变可能会使子类遭到破坏。
+```Java
+//统计插入Set的所有元素的数量
+public class InstrumentedHashSet<T> extends HashSet<T>{
+	private int count;
+
+	@Override
+	public void add(T t){
+		count++;
+		super.add(t);
+	}
+
+	@Override
+	public void addAll(Collection<? extends T> c){
+		count += c.size();
+		super.addAll(c);
+	}
+
+	//调用addAll时返回的数值是实际的2倍
+	//过程：this.addAll（count++） -> HashMap.addAll -> this.add（count++）
+	public int getCount(){
+		return count;
+	}
+}
+```
+
+2. 继承只适用于扩展某个特定类（父类）
+>父类在编译时就已经确定了，无法在运行时对父类进行修改。如上述代码所示，基于继承的方式只能扩展HashSet。
+
+3. 继承会把父类的缺陷传给子类
+>只有两个类之间是"is-a"关系，才适合用继承。
+
+#### 用复合来扩展类而不是继承
+>复合是指在扩展类中增加一个私有域，它指向被扩展类的一个实例。
+```
+//用复合的方式实现InstrumentedHashSet
+public class InstrumentedHashSet<T> implements Set<T>{
+	private int count;
+	private Set<T> set;
+
+	public InstrumentedHashSet(Set<T> set){
+		this.set = set;
+	}
+
+	//实现Set接口中定义的方法
+	...
+
+	@Override
+	public void add(T t){
+		count++;
+		set.add(t);
+	}
+
+	@Override
+	public void addAll(Collection<? extends T> c){
+		count += c.size();
+		set.addAll(c);
+	}
+
+	//调用时返回正确的count
+	public int getCount(){
+		return count;
+	}
+}
+```
+
+#### 复合的优点
+1. 复合可以扩展多个类
+>从上述代码可以看出，构造函数的入参Set在运行时才确定，因此可以扩展所有Set接口的实现类。
+
+2. 复合可以隐藏被扩展类的缺陷
+>当被扩展类有缺陷时，扩展类可以通过设计新的API来隐藏这些缺陷。
+```Java
+//接口
+public interface E{
+	int count(int i);
+}
+
+//被扩展类，有缺陷
+public class A implements E{
+	//本来应该返回i+2，却错误地返回了i+1
+	@Override
+	public int count(int i){
+		return i+1;
+	}
+}
+
+//修正缺陷类A,返回i+2
+public class B implements E{
+	private E e;
+
+	public B(E e){
+		this.e = e;
+	}
+
+	@Override
+	public int count(int i){
+		return e.count(i) + 1;
+	}
+}
+```
